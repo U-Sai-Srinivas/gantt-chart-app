@@ -10,47 +10,28 @@ st.set_page_config(page_title="Dynamic Gantt Chart", layout="wide")
 st.title("📊 Dynamic Gantt Chart Generator")
 
 # --- SIDEBAR: Project Management ---
-# --- SIDEBAR: Project Management ---
 with st.sidebar:
     st.header("📂 Manage Projects")
     
-    # 1. Load an existing project
     st.subheader("Open Project")
     uploaded_file = st.file_uploader("Upload a saved .csv file", type=["csv"])
     
     if uploaded_file is not None:
         try:
-            st.session_state.task_data = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file)
+            if 'Start Date' in df.columns:
+                df['Start Date'] = pd.to_datetime(df['Start Date'], errors='coerce')
+            st.session_state.task_data = df
             st.success("Project loaded successfully!")
         except Exception as e:
             st.error(f"Error loading file: {e}")
             
     st.divider()
     
-    # 2. Save current project
     st.subheader("Save Project")
     if 'editor_state' in st.session_state and st.session_state.editor_state is not None:
         pass 
         
-    # 3. Download Blank Template
-    st.subheader("Templates")
-    st.markdown("Download an empty template to start a new project offline.")
-    template_df = pd.DataFrame(columns=["Task ID", "Task Name", "Type", "Resource", "Start Date", "Duration (Days)", "Dependencies"])
-    template_csv = template_df.to_csv(index=False).encode('utf-8')
-    st.download_button(
-        label="📄 Download CSV Template",
-        data=template_csv,
-        file_name="gantt_template.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    # 2. Save current project
-    st.subheader("Save Project")
-    if 'editor_state' in st.session_state and st.session_state.editor_state is not None:
-        # We need to grab the current state from the data editor to save it
-        pass # The download button will use edited_df below
-        
-    # 3. Download Blank Template
     st.subheader("Templates")
     st.markdown("Download an empty template to start a new project offline.")
     template_df = pd.DataFrame(columns=["Task ID", "Task Name", "Type", "Resource", "Start Date", "Duration (Days)", "Dependencies"])
@@ -61,9 +42,8 @@ with st.sidebar:
         file_name="gantt_template.csv",
         mime="text/csv",
         use_container_width=True,
-        key="template_dl_btn"  # <--- ADD THIS LINE
+        key="template_dl_btn"
     )
-
 
 # 1. Data Initialization
 if 'task_data' not in st.session_state:
@@ -72,17 +52,14 @@ if 'task_data' not in st.session_state:
         "Task Name": ["Project Scoping", "Design Phase", "Design Approval", "Backend Dev", "Frontend Dev", "Launch Decision"],
         "Type": ["Task", "Task", "Milestone", "Task", "Task", "Go/No-Go"],
         "Resource": ["Alice", "Bob", "Client", "Charlie", "Alice", "Stakeholders"],
-        # Change 1: Use pd.NaT instead of None for missing dates
         "Start Date": [date.today(), pd.NaT, pd.NaT, pd.NaT, pd.NaT, pd.NaT], 
         "Duration (Days)": [3, 5, 0, 7, 6, 0], 
         "Dependencies": ["", "T1", "T2", "M1", "M1", "T3, T4"]
     })
 
-# --- CRITICAL FIX ---
-# Force pandas to treat this column strictly as datetimes. 
-# This prevents crashes when loading the blank CSV template!
+# Force datetime to prevent type compatibility crashes
 st.session_state.task_data['Start Date'] = pd.to_datetime(st.session_state.task_data['Start Date'], errors='coerce')
-# --------------------
+
 # 2. Editable Grid UI
 st.subheader("1. Edit Your Tasks")
 col1, col2 = st.columns([3, 1])
@@ -102,20 +79,14 @@ edited_df = st.data_editor(
     column_config={
         "Task ID": st.column_config.TextColumn(required=True),
         "Task Name": st.column_config.TextColumn(required=True),
-        "Type": st.column_config.SelectboxColumn(
-            "Type", 
-            options=["Task", "Milestone", "Go/No-Go"], 
-            required=True
-        ),
+        "Type": st.column_config.SelectboxColumn("Type", options=["Task", "Milestone", "Go/No-Go"], required=True),
         "Resource": st.column_config.TextColumn(),
         "Start Date": st.column_config.DateColumn("Start Date (Optional)"), 
-        "Duration (Days)": st.column_config.NumberColumn(required=True, min_value=0), # Lowered to 0
+        "Duration (Days)": st.column_config.NumberColumn(required=True, min_value=0),
         "Dependencies": st.column_config.TextColumn()
     }
 )
 
-# Put the save button here so it has access to edited_df
-# Put the save button here so it has access to edited_df
 with st.sidebar:
     csv_data = edited_df.to_csv(index=False).encode('utf-8')
     st.download_button(
@@ -124,7 +95,7 @@ with st.sidebar:
         file_name="my_gantt_project.csv",
         mime="text/csv",
         use_container_width=True,
-        key="active_dl_btn"  # <--- ADD THIS LINE
+        key="active_dl_btn"
     )
 
 # 3. Calculation Logic 
@@ -133,7 +104,6 @@ def calculate_gantt_dates(df, project_start_date):
     df['Duration (Days)'] = pd.to_numeric(df['Duration (Days)'], errors='coerce').fillna(1).astype(int)
     df['Dependencies'] = df['Dependencies'].fillna("").astype(str)
     
-    # Ensure Type column exists for older CSVs
     if 'Type' not in df.columns:
         df['Type'] = 'Task'
 
@@ -170,11 +140,9 @@ def calculate_gantt_dates(df, project_start_date):
                     else:
                         start_date = valid_project_start
                 
-                # Snap start date to nearest business day
                 start_np = np.datetime64(start_date)
                 start_date = pd.to_datetime(np.busday_offset(start_np, 0, roll='forward')).date()
                         
-                # Calculate end date using business days (0 duration stays on the same day)
                 start_np_calc = np.datetime64(start_date)
                 end_date = pd.to_datetime(np.busday_offset(start_np_calc, duration)).date()
                 
@@ -203,7 +171,6 @@ if len(valid_df) < len(calculated_df):
     st.error("⚠️ Some tasks could not be scheduled. Check for circular dependencies or invalid Task IDs.")
 
 if not valid_df.empty:
-    # Set the Plotly template
     plotly_template = "plotly_dark" if theme_choice == "Dark" else "plotly_white"
 
     fig = px.timeline(
@@ -220,41 +187,42 @@ if not valid_df.empty:
     fig.update_yaxes(autorange="reversed") 
     
     # ---------------------------------------------------------
-    # DEPENDENCY ARROWS & MILESTONE ICONS
+    # NEW LOGIC: Step-lines & End-anchored Milestones
     # ---------------------------------------------------------
-    arrow_color = "rgba(255,255,255,0.6)" if theme_choice == "Dark" else "rgba(0,0,0,0.4)"
+    line_color = "rgba(255,255,255,0.4)" if theme_choice == "Dark" else "rgba(0,0,0,0.3)"
     
     for index, row in valid_df.iterrows():
-        # Draw dependency arrows
+        # 1. Clean, right-angled dependency connectors
         if pd.notna(row['Dependencies']) and str(row['Dependencies']).strip() != "":
             deps = [d.strip() for d in str(row['Dependencies']).split(',')]
             for d in deps:
                 dep_row = valid_df[valid_df['Task ID'] == d]
                 if not dep_row.empty:
                     dep_row = dep_row.iloc[0]
-                    fig.add_annotation(
-                        x=row['Start Date'], y=row['Task Name'],
-                        ax=dep_row['End Date'], ay=dep_row['Task Name'],
-                        xref="x", yref="y", axref="x", ayref="y",
-                        showarrow=True, arrowhead=2, arrowsize=1,
-                        arrowwidth=1.5, arrowcolor=arrow_color
-                    )
+                    fig.add_trace(go.Scatter(
+                        x=[dep_row['End Date'], row['Start Date']],
+                        y=[dep_row['Task Name'], row['Task Name']],
+                        mode='lines+markers',
+                        line=dict(shape='hv', color=line_color, width=1.5, dash='dot'),
+                        marker=dict(symbol='circle', size=[0, 6], color=line_color), # Dot only at destination
+                        showlegend=False,
+                        hoverinfo='skip'
+                    ))
         
-        # Add special marker shapes for Milestones and Go/No-Go
+        # 2. Milestones and Go/No-Go attached to the END DATE
         if row.get('Type') == 'Milestone':
             fig.add_trace(go.Scatter(
-                x=[row['Start Date']], y=[row['Task Name']],
+                x=[row['End Date']], y=[row['Task Name']],
                 mode='markers', marker=dict(symbol='star', size=20, color='gold', line=dict(width=1, color='black')),
                 showlegend=False, hoverinfo='skip'
             ))
         elif row.get('Type') == 'Go/No-Go':
             fig.add_trace(go.Scatter(
-                x=[row['Start Date']], y=[row['Task Name']],
+                x=[row['End Date']], y=[row['Task Name']],
                 mode='markers', marker=dict(symbol='diamond', size=18, color='crimson', line=dict(width=1, color='black')),
                 showlegend=False, hoverinfo='skip'
             ))
 
-    # BRUTE FORCE THEME FIX: Override Streamlit's transparent backgrounds
     bg_color = "#111111" if theme_choice == "Dark" else "#FFFFFF"
     text_color = "#FFFFFF" if theme_choice == "Dark" else "#000000"
 
