@@ -17,14 +17,17 @@ with st.sidebar:
     st.subheader("Open Project")
     uploaded_file = st.file_uploader("Upload a saved .csv file", type=["csv"])
     
-    if uploaded_file is not None:
+if uploaded_file is not None:
         try:
-            st.session_state.task_data = pd.read_csv(uploaded_file)
+            df = pd.read_csv(uploaded_file)
+            # Apply the same date formatting fix to uploaded files
+            if 'Start Date' in df.columns:
+                df['Start Date'] = pd.to_datetime(df['Start Date'], errors='coerce')
+                
+            st.session_state.task_data = df
             st.success("Project loaded successfully!")
         except Exception as e:
             st.error(f"Error loading file: {e}")
-            
-    st.divider()
     
     # 2. Save current project
     st.subheader("Save Project")
@@ -45,6 +48,7 @@ with st.sidebar:
         use_container_width=True
     )
 
+
 # 1. Data Initialization
 if 'task_data' not in st.session_state:
     st.session_state.task_data = pd.DataFrame({
@@ -52,11 +56,17 @@ if 'task_data' not in st.session_state:
         "Task Name": ["Project Scoping", "Design Phase", "Design Approval", "Backend Dev", "Frontend Dev", "Launch Decision"],
         "Type": ["Task", "Task", "Milestone", "Task", "Task", "Go/No-Go"],
         "Resource": ["Alice", "Bob", "Client", "Charlie", "Alice", "Stakeholders"],
-        "Start Date": [date.today(), None, None, None, None, None],
-        "Duration (Days)": [3, 5, 0, 7, 6, 0], # Note: Milestones can be 0 days
+        # Change 1: Use pd.NaT instead of None for missing dates
+        "Start Date": [date.today(), pd.NaT, pd.NaT, pd.NaT, pd.NaT, pd.NaT], 
+        "Duration (Days)": [3, 5, 0, 7, 6, 0], 
         "Dependencies": ["", "T1", "T2", "M1", "M1", "T3, T4"]
     })
 
+# --- CRITICAL FIX ---
+# Force pandas to treat this column strictly as datetimes. 
+# This prevents crashes when loading the blank CSV template!
+st.session_state.task_data['Start Date'] = pd.to_datetime(st.session_state.task_data['Start Date'], errors='coerce')
+# --------------------
 # 2. Editable Grid UI
 st.subheader("1. Edit Your Tasks")
 col1, col2 = st.columns([3, 1])
