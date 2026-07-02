@@ -11,11 +11,12 @@ st.title("📊 Dynamic Gantt Chart Generator")
 # 1. Dummy Data Initialization
 if 'task_data' not in st.session_state:
     st.session_state.task_data = pd.DataFrame({
-        "Task ID": ["T1", "T2", "T3", "T4", "T5"],
-        "Task Name": ["Project Scoping", "Design Phase", "Backend Dev", "Frontend Dev", "Integration Testing"],
-        "Resource": ["Alice", "Bob", "Charlie", "Alice", "Team"],
-        "Duration (Days)": [3, 5, 7, 6, 4],
-        "Dependencies": ["", "T1", "T2", "T2", "T3, T4"]
+        "Task ID": ["T1", "T2", "T3", "T4", "T5", "T6"],
+        "Task Name": ["Project Scoping", "Design Phase", "Backend Dev", "Frontend Dev", "Integration Testing", "Independent Task"],
+        "Resource": ["Alice", "Bob", "Charlie", "Alice", "Team", "Dave"],
+        "Start Date": [date.today(), None, None, None, None, date.today()], # New column
+        "Duration (Days)": [3, 5, 7, 6, 4, 2],
+        "Dependencies": ["", "T1", "T2", "T2", "T3, T4", ""]
     })
 
 # 2. Editable Grid UI
@@ -23,9 +24,10 @@ st.subheader("1. Edit Your Tasks")
 col1, col2 = st.columns([3, 1])
 
 with col1:
-    st.markdown("Modify durations, names, resources, or dependencies (comma-separated). Add or delete rows as needed. *Note: Durations are calculated in business days.*")
+    st.markdown("Modify dates, durations, or dependencies. *Tasks with dependencies will automatically calculate their start date, overriding manual inputs. Durations use business days.*")
 with col2:
-    project_start = st.date_input("Project Start Date", date.today())
+    project_start = st.date_input("Global Project Start", date.today())
+    theme_choice = st.radio("Chart Theme", ["Light", "Dark"], horizontal=True)
 
 edited_df = st.data_editor(
     st.session_state.task_data,
@@ -37,12 +39,13 @@ edited_df = st.data_editor(
         "Task ID": st.column_config.TextColumn(required=True),
         "Task Name": st.column_config.TextColumn(required=True),
         "Resource": st.column_config.TextColumn(),
+        "Start Date": st.column_config.DateColumn("Start Date (Optional)"), # Date picker
         "Duration (Days)": st.column_config.NumberColumn(required=True, min_value=1),
         "Dependencies": st.column_config.TextColumn()
     }
 )
 
-# 3. Calculation Logic (Now with Business Days)
+# 3. Calculation Logic 
 def calculate_gantt_dates(df, project_start_date):
     df = df.dropna(subset=['Task ID', 'Duration (Days)']).copy()
     df['Duration (Days)'] = pd.to_numeric(df['Duration (Days)'], errors='coerce').fillna(1).astype(int)
@@ -51,7 +54,6 @@ def calculate_gantt_dates(df, project_start_date):
     task_dict = {}
     pending_tasks = df.to_dict('records')
     
-    # Snap project start date to the nearest business day (rolls forward if weekend)
     project_start_np = np.datetime64(project_start_date)
     valid_project_start = pd.to_datetime(np.busday_offset(project_start_np, 0, roll='forward')).date()
 
@@ -64,26 +66,32 @@ def calculate_gantt_dates(df, project_start_date):
             task_id = str(task['Task ID']).strip()
             duration = task['Duration (Days)']
             deps_str = task['Dependencies']
+            manual_start = task.get('Start Date') # Check for manual start date
             
             deps = [d.strip() for d in deps_str.split(',')] if deps_str.strip() else []
             
             if not deps or all(d in task_dict for d in deps if d):
                 if not deps or not any(d for d in deps):
-                    start_date = valid_project_start
+                    # Use manual start date if provided, otherwise use global project start
+                    if pd.notna(manual_start) and manual_start != "":
+                        start_date = pd.to_datetime(manual_start).date()
+                    else:
+                        start_date = valid_project_start
                 else:
                     valid_deps = [d for d in deps if d in task_dict]
                     if valid_deps:
-                        # Task starts on the LATEST end date of all its dependencies
                         proposed_start = max(task_dict[d]['end_date'] for d in valid_deps)
-                        # Ensure the start date is a business day
-                        proposed_start_np = np.datetime64(proposed_start)
-                        start_date = pd.to_datetime(np.busday_offset(proposed_start_np, 0, roll='forward')).date()
+                        start_date = proposed_start
                     else:
                         start_date = valid_project_start
-                        
-                # Calculate end date strictly using business days
+                
+                # Snap start date to nearest business day
                 start_np = np.datetime64(start_date)
-                end_date = pd.to_datetime(np.busday_offset(start_np, duration)).date()
+                start_date = pd.to_datetime(np.busday_offset(start_np, 0, roll='forward')).date()
+                        
+                # Calculate end date using business days
+                start_np_calc = np.datetime64(start_date)
+                end_date = pd.to_datetime(np.busday_offset(start_np_calc, duration)).date()
                 
                 task_dict[task_id] = {
                     'start_date': start_date,
@@ -107,9 +115,12 @@ valid_df = calculated_df.dropna(subset=['Start Date', 'End Date'])
 st.subheader("2. Project Timeline")
 
 if len(valid_df) < len(calculated_df):
-    st.error("⚠️ Some tasks could not be scheduled. Please check your data for circular dependencies (e.g., Task A depends on Task B, and Task B depends on Task A) or invalid Task IDs.")
+    st.error("⚠️ Some tasks could not be scheduled. Check for circular dependencies or invalid Task IDs.")
 
 if not valid_df.empty:
+    # Set theme template
+    plotly_template = "plotly_dark" if theme_choice == "Dark" else "plotly_white"
+
     fig = px.timeline(
         valid_df,
         x_start="Start Date",
@@ -117,7 +128,8 @@ if not valid_df.empty:
         y="Task Name",
         text="Task Name",
         color="Resource",
-        hover_data=["Task ID", "Duration (Days)", "Dependencies"]
+        hover_data=["Task ID", "Duration (Days)", "Dependencies"],
+        template=plotly_template # Apply the chosen theme here
     )
     
     fig.update_yaxes(autorange="reversed") 
