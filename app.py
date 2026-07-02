@@ -8,16 +8,34 @@ from datetime import date
 st.set_page_config(page_title="Dynamic Gantt Chart", layout="wide")
 st.title("📊 Dynamic Gantt Chart Generator")
 
-# 1. Dummy Data Initialization
+# --- NEW SIDEBAR: Project Management ---
+with st.sidebar:
+    st.header("📂 Manage Projects")
+    
+    # 1. Load an existing project
+    st.subheader("Open Project")
+    uploaded_file = st.file_uploader("Upload a saved .csv file", type=["csv"])
+    
+    if uploaded_file is not None:
+        try:
+            # Read the uploaded CSV and overwrite the session state
+            st.session_state.task_data = pd.read_csv(uploaded_file)
+            st.success("Project loaded successfully!")
+        except Exception as e:
+            st.error(f"Error loading file: {e}")
+
+# 1. Data Initialization (Uses uploaded data, or falls back to Dummy Data)
 if 'task_data' not in st.session_state:
     st.session_state.task_data = pd.DataFrame({
         "Task ID": ["T1", "T2", "T3", "T4", "T5", "T6"],
         "Task Name": ["Project Scoping", "Design Phase", "Backend Dev", "Frontend Dev", "Integration Testing", "Independent Task"],
         "Resource": ["Alice", "Bob", "Charlie", "Alice", "Team", "Dave"],
-        "Start Date": [date.today(), None, None, None, None, date.today()], # New column
+        "Start Date": [date.today(), None, None, None, None, date.today()],
         "Duration (Days)": [3, 5, 7, 6, 4, 2],
         "Dependencies": ["", "T1", "T2", "T2", "T3, T4", ""]
     })
+
+# --- END OF UPDATED SECTION ---
 
 # 2. Editable Grid UI
 st.subheader("1. Edit Your Tasks")
@@ -39,11 +57,27 @@ edited_df = st.data_editor(
         "Task ID": st.column_config.TextColumn(required=True),
         "Task Name": st.column_config.TextColumn(required=True),
         "Resource": st.column_config.TextColumn(),
-        "Start Date": st.column_config.DateColumn("Start Date (Optional)"), # Date picker
+        "Start Date": st.column_config.DateColumn("Start Date (Optional)"), 
         "Duration (Days)": st.column_config.NumberColumn(required=True, min_value=1),
         "Dependencies": st.column_config.TextColumn()
     }
 )
+# --- NEW: Save Project Button ---
+with st.sidebar:
+    st.divider()
+    st.subheader("Save Project")
+    st.markdown("Download your current tasks to save your progress.")
+    
+    # Convert the edited dataframe to a CSV format
+    csv_data = edited_df.to_csv(index=False).encode('utf-8')
+    
+    st.download_button(
+        label="⬇️ Download Project File",
+        data=csv_data,
+        file_name="my_gantt_project.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
 # 3. Calculation Logic 
 def calculate_gantt_dates(df, project_start_date):
@@ -66,13 +100,12 @@ def calculate_gantt_dates(df, project_start_date):
             task_id = str(task['Task ID']).strip()
             duration = task['Duration (Days)']
             deps_str = task['Dependencies']
-            manual_start = task.get('Start Date') # Check for manual start date
+            manual_start = task.get('Start Date') 
             
             deps = [d.strip() for d in deps_str.split(',')] if deps_str.strip() else []
             
             if not deps or all(d in task_dict for d in deps if d):
                 if not deps or not any(d for d in deps):
-                    # Use manual start date if provided, otherwise use global project start
                     if pd.notna(manual_start) and manual_start != "":
                         start_date = pd.to_datetime(manual_start).date()
                     else:
@@ -118,7 +151,6 @@ if len(valid_df) < len(calculated_df):
     st.error("⚠️ Some tasks could not be scheduled. Check for circular dependencies or invalid Task IDs.")
 
 if not valid_df.empty:
-    # Set theme template
     plotly_template = "plotly_dark" if theme_choice == "Dark" else "plotly_white"
 
     fig = px.timeline(
@@ -129,10 +161,39 @@ if not valid_df.empty:
         text="Task Name",
         color="Resource",
         hover_data=["Task ID", "Duration (Days)", "Dependencies"],
-        template=plotly_template # Apply the chosen theme here
+        template=plotly_template 
     )
     
     fig.update_yaxes(autorange="reversed") 
+    
+    # ---------------------------------------------------------
+    # NEW LOGIC: Manually draw dependency arrows between tasks
+    # ---------------------------------------------------------
+    arrow_color = "rgba(255,255,255,0.6)" if theme_choice == "Dark" else "rgba(0,0,0,0.4)"
+    
+    for index, row in valid_df.iterrows():
+        if pd.notna(row['Dependencies']) and str(row['Dependencies']).strip() != "":
+            deps = [d.strip() for d in str(row['Dependencies']).split(',')]
+            for d in deps:
+                dep_row = valid_df[valid_df['Task ID'] == d]
+                if not dep_row.empty:
+                    dep_row = dep_row.iloc[0]
+                    
+                    # Draw arrow from Dependency End Date to Current Task Start Date
+                    fig.add_annotation(
+                        x=row['Start Date'],
+                        y=row['Task Name'],
+                        ax=dep_row['End Date'],
+                        ay=dep_row['Task Name'],
+                        xref="x", yref="y",
+                        axref="x", ayref="y",
+                        showarrow=True,
+                        arrowhead=2,
+                        arrowsize=1,
+                        arrowwidth=1.5,
+                        arrowcolor=arrow_color
+                    )
+
     fig.update_layout(
         xaxis_title="Timeline",
         yaxis_title="",
@@ -140,6 +201,8 @@ if not valid_df.empty:
         margin=dict(l=20, r=20, t=40, b=20),
         showlegend=True
     )
-    st.plotly_chart(fig, use_container_width=True)
+    
+    # NEW LOGIC: Force theme=None so Streamlit respects the Light/Dark templates
+    st.plotly_chart(fig, use_container_width=True, theme=None)
 else:
     st.info("Add tasks and valid durations to generate the timeline.")
