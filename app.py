@@ -10,6 +10,7 @@ st.set_page_config(page_title="Dynamic Gantt Chart", layout="wide")
 st.title("📊 Dynamic Gantt Chart Generator")
 
 # --- SIDEBAR: Project Management ---
+# --- SIDEBAR: Project Management ---
 with st.sidebar:
     st.header("📂 Manage Projects")
     
@@ -17,18 +18,32 @@ with st.sidebar:
     st.subheader("Open Project")
     uploaded_file = st.file_uploader("Upload a saved .csv file", type=["csv"])
     
-if uploaded_file is not None:
+    if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
-            # Apply the same date formatting fix to uploaded files
-            if 'Start Date' in df.columns:
-                df['Start Date'] = pd.to_datetime(df['Start Date'], errors='coerce')
-                
-            st.session_state.task_data = df
+            st.session_state.task_data = pd.read_csv(uploaded_file)
             st.success("Project loaded successfully!")
         except Exception as e:
             st.error(f"Error loading file: {e}")
+            
+    st.divider()
     
+    # 2. Save current project
+    st.subheader("Save Project")
+    if 'editor_state' in st.session_state and st.session_state.editor_state is not None:
+        pass 
+        
+    # 3. Download Blank Template
+    st.subheader("Templates")
+    st.markdown("Download an empty template to start a new project offline.")
+    template_df = pd.DataFrame(columns=["Task ID", "Task Name", "Type", "Resource", "Start Date", "Duration (Days)", "Dependencies"])
+    template_csv = template_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📄 Download CSV Template",
+        data=template_csv,
+        file_name="gantt_template.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
     # 2. Save current project
     st.subheader("Save Project")
     if 'editor_state' in st.session_state and st.session_state.editor_state is not None:
