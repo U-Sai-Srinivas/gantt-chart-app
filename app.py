@@ -60,7 +60,8 @@ with st.sidebar:
         data=template_csv,
         file_name="gantt_template.csv",
         mime="text/csv",
-        use_container_width=True
+        use_container_width=True,
+        key="template_dl_btn"  # <--- ADD THIS LINE
     )
 
 
@@ -114,6 +115,7 @@ edited_df = st.data_editor(
 )
 
 # Put the save button here so it has access to edited_df
+# Put the save button here so it has access to edited_df
 with st.sidebar:
     csv_data = edited_df.to_csv(index=False).encode('utf-8')
     st.download_button(
@@ -121,7 +123,8 @@ with st.sidebar:
         data=csv_data,
         file_name="my_gantt_project.csv",
         mime="text/csv",
-        use_container_width=True
+        use_container_width=True,
+        key="active_dl_btn"  # <--- ADD THIS LINE
     )
 
 # 3. Calculation Logic 
