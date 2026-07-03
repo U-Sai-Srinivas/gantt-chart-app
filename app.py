@@ -66,6 +66,14 @@ if 'task_data' not in st.session_state:
         "Dependencies": ["", "T1", "T2", "M1", "M1", "T3, T4"]
     })
 
+# --- NEW SAFEGUARD: Make old CSVs backwards compatible ---
+# If an older project is loaded, ensure it gets the new columns to prevent KeyErrors
+if 'End Date' not in st.session_state.task_data.columns:
+    st.session_state.task_data['End Date'] = pd.NaT
+if 'Type' not in st.session_state.task_data.columns:
+    st.session_state.task_data['Type'] = 'Task'
+# ---------------------------------------------------------
+
 # Force datetime to prevent type compatibility crashes
 st.session_state.task_data['Start Date'] = pd.to_datetime(st.session_state.task_data['Start Date'], errors='coerce')
 st.session_state.task_data['End Date'] = pd.to_datetime(st.session_state.task_data['End Date'], errors='coerce')
